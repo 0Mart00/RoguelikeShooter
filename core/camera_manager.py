@@ -6,7 +6,7 @@ class CameraManager:
         self.target = target_node # A célpont, amit követ (pl. játékos)
         
         # Paraméterek
-        self.distance = 100
+        self.distance = 50
         self.height = 10
         self.sensitivity = 0.2 # Egér érzékenység
         

@@ -2,8 +2,13 @@ from panda3d.core import Vec3, NodePath, GeomNode, GeomVertexFormat, GeomVertexD
 from math import sin, cos, radians
 
 class Player:
-    def __init__(self, render_node, start_pos=(0, 0, 10)):
+    def __init__(self, render_node, start_pos=(0, 0, 50)): # Start pos magasabban!
         self.speed = 10.0
+        
+        # --- ÚJ: Fizikai változók (EZ HIÁNYZOTT) ---
+        self.vertical_velocity = 0.0
+        self.is_grounded = False
+        
         # Játékos vizuális megjelenítése (Kocka)
         self.node = self._make_box(2.0)
         self.node.reparentTo(render_node)
@@ -12,7 +17,8 @@ class Player:
 
     def update_movement(self, dt, keys, camera_heading):
         """
-        Frissíti a játékos pozícióját a gombok és a kamera iránya alapján.
+        Csak a vízszintes mozgást kezeli (X, Y). 
+        A Z mozgást a PhysicsManager intézi!
         """
         direction = Vec3(0, 0, 0)
         
@@ -33,10 +39,14 @@ class Player:
                 0
             )
             
-            # Pozíció frissítése
+            # Pozíció frissítése (Csak X és Y!)
             current_pos = self.node.getPos()
+            # A Z koordinátát nem bántjuk, azt a gravitáció viszi
             new_pos = current_pos + (rotated_dir * self.speed * dt)
-            self.node.setPos(new_pos)
+            
+            # Csak X és Y-t állítjuk be itt
+            self.node.setX(new_pos.x)
+            self.node.setY(new_pos.y)
 
     def get_pos(self):
         return self.node.getPos()
