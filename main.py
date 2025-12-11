@@ -1,62 +1,69 @@
 import sys
 from direct.showbase.ShowBase import ShowBase
-from panda3d.core import AmbientLight, DirectionalLight
+from panda3d.core import AmbientLight, DirectionalLight, Vec3
 
-# --- Modulok importálása a mappákból ---
+# --- Modulok importálása ---
 try:
-    # 1. Terrain modulok
     from terrain.generator import generate_island
     from terrain.terrain import make_island_nodepath, make_radial_island_nodepath
     
-    # 2. Core modulok
     from core.player import Player
     from core.camera_manager import CameraManager
-    # ÚJ: Importáljuk a fizikát
     from core.physics import PhysicsManager
+    
+    # ÚJ: Importáljuk az Enemy AI-t
+    from core.enemy_ai import EnemyAI
 
 except ImportError as e:
     print("HIBA: Hiányzó fájlok vagy modulok!")
     print(f"Részletek: {e}")
-    print("Ellenőrizd, hogy léteznek-e a 'core' és 'terrain' mappák!")
     sys.exit()
 
 class Game(ShowBase):
     def __init__(self):
         super().__init__()
-        self.disableMouse() # Alapértelmezett kamera letiltása
+        self.disableMouse()
         
-        # 1. Környezet beállítása
+        # 1. Környezet
         self.setup_environment()
         
-        # 2. Terrain generálás
+        # 2. Terrain
         self.setup_terrain()
 
-        # 3. Játékos létrehozása (Magasról indítjuk: Z=50)
+        # 3. Játékos
         self.player = Player(self.render, start_pos=(0, 0, 50))
         
-        # 4. Kamera kezelő
+        # 4. Kamera
         self.cam_manager = CameraManager(self, self.player.node)
         
-        # 5. FIZIKA LÉTREHOZÁSA ÉS BEÁLLÍTÁSA
+        # 5. Fizika
         self.physics = PhysicsManager(self)
-        # Összekötjük a játékost és a terepet
         self.physics.setup_collision(self.player, self.terrain)
         
-        # 6. Inputok beállítása
-        self.keys = {"w": False, "s": False, "a": False, "d": False}
+        # 6. --- ÚJ: Enemy AI létrehozása ---
+        # Járőr pontok a sziget körül (kb. 50 egységre a középponttól)
+        patrol_points = [
+            Vec3(40, 40, 0), Vec3(40, -40, 0), 
+            Vec3(-40, -40, 0), Vec3(-40, 40, 0)
+        ]
+        self.enemy = EnemyAI(self, self.player, patrol_points)
+        
+        # 7. Inputok (Space hozzáadva)
+        self.keys = {"w": False, "s": False, "a": False, "d": False, "space": False}
         self.setup_controls()
 
-        # 7. Taskok indítása
+        # Info szöveg
+        from direct.gui.OnscreenText import OnscreenText
+        self.info = OnscreenText(text="WASD: Mozgás | SPACE: Zajkeltés (Vigyázz!)",
+                                 pos=(-0.9, 0.9), scale=0.05, align=0, fg=(1,1,1,1))
+
         self.taskMgr.add(self.game_loop, "game_loop")
 
     def setup_environment(self):
-        """Fények és háttérszín beállítása."""
         self.setBackgroundColor(0.5, 0.7, 0.9)
-
         alight = AmbientLight('alight')
         alight.setColor((0.4, 0.4, 0.4, 1))
         self.render.setLight(self.render.attachNewNode(alight))
-
         dlight = DirectionalLight('dlight')
         dlight.setColor((0.8, 0.8, 0.7, 1))
         dlnp = self.render.attachNewNode(dlight)
@@ -64,26 +71,22 @@ class Game(ShowBase):
         self.render.setLight(dlnp)
 
     def setup_terrain(self):
-        """A sziget legenerálása és elhelyezése."""
         print("Sziget generálása...")
-        
-        # Magasságtérkép generálása
         height_map = generate_island(size=129, height_scale=1.0, seed=42)
         
-        # Radiális (kör alakú) sziget használata
         self.terrain = make_radial_island_nodepath(
             self, 
             height_map, 
-            pos=(0, 0, -20), # Kicsit lejjebb, hogy legyen hely esni
+            pos=(0, 0, -20), 
             radius=150, 
             height_scale=30.0
         )
-        
         self.terrain.reparentTo(self.render)
         self.terrain.setColor(0.2, 0.6, 0.3, 1) 
         self.terrain.setTwoSided(True)
 
     def setup_controls(self):
+        # Space hozzáadása a listához
         for key in self.keys:
             self.accept(key, self.set_key, [key, True])
             self.accept(key+"-up", self.set_key, [key, False])
@@ -96,16 +99,11 @@ class Game(ShowBase):
         self.keys[key] = value
 
     def game_loop(self, task):
-        """Ez fut minden képkockában."""
         dt = globalClock.getDt()
         
-        # 1. Kamera frissítése
         self.cam_manager.update()
-        
-        # 2. Fizika frissítése (Ez intézi a gravitációt és az ütközést)
         self.physics.update_physics(dt)
         
-        # 3. Játékos VÍZSZINTES mozgatása
         cam_heading = self.cam_manager.get_heading()
         self.player.update_movement(dt, self.keys, cam_heading)
         
