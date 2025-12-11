@@ -9,17 +9,19 @@ class PhysicsManager:
         self.base = base_app
         
         # Ütközés kezelők inicializálása
-        # A Traverser végzi a vizsgálatot
         self.cTrav = CollisionTraverser()
-        # A Queue tárolja a találatokat
         self.cQueue = CollisionHandlerQueue()
         
         # Fizikai konstansok
-        self.gravity = 30.0    # Gravitációs erő
-        self.terminal_velocity = 50.0 # Maximális esési sebesség
-
-        # Ütközési maszk (hogy csak a talajjal ütközzünk)
+        self.gravity = 30.0
+        self.terminal_velocity = 50.0
         self.ground_mask = BitMask32.bit(1)
+        self.player_obj = None
+        
+        # ÚJ: Offset a játékos középpontja és talpa között.
+        # Mivel a kocka 2.0 egység magas és az origója középen van,
+        # 1.0-val feljebb kell tolni, hogy a talpa érje a földet.
+        self.player_height_offset = 1.0
 
     def setup_collision(self, player_obj, terrain_node):
         """
@@ -27,71 +29,54 @@ class PhysicsManager:
         """
         self.player_obj = player_obj
         
-        # 1. Sugár (Ray) létrehozása a játékosnál
-        # A sugár 1 egységgel a talp felett indul (0,0,1) és lefelé mutat (0,0,-1)
+        # A sugarat magasabbról (Z=50) indítjuk, hogy meredek lejtőn se kerüljön föld alá a kezdőpont
         ray = CollisionRay()
-        ray.setOrigin(0, 0, 1) 
+        ray.setOrigin(0, 0, 50) 
         ray.setDirection(0, 0, -1)
         
-        # Ütközési node létrehozása a sugárnak
         c_node = CollisionNode('player_ray')
         c_node.addSolid(ray)
         
-        # Beállítjuk, hogy mit "lásson" a sugár (From mask)
         c_node.setFromCollideMask(self.ground_mask)
-        # A sugárral magával nem akarunk ütközni (Into mask kikapcsolása)
         c_node.setIntoCollideMask(BitMask32.allOff())
         
-        # Csatoljuk a játékoshoz
         self.c_np = self.player_obj.node.attachNewNode(c_node)
-        
-        # Hozzáadjuk a traverserhez
         self.cTrav.addCollider(self.c_np, self.cQueue)
-        
-        # 2. Terep beállítása
-        # Fontos: A generált terrainnek be kell állítani az Into maszkját
-        terrain_node.setCollideMask(self.ground_mask)
-        
-        # Debug: Ha látni akarod a sugarat, vedd ki a kommentet:
-        # self.cTrav.showCollisions(self.base.render)
 
     def update_physics(self, dt):
-        """
-        Ezt kell hívni minden frame-ben. Kezeli a gravitációt és a talajfogást.
-        """
         if not self.player_obj:
             return
 
-        # 1. Gravitáció alkalmazása a sebességre
+        # 1. Gravitáció alkalmazása
         self.player_obj.vertical_velocity -= self.gravity * dt
         
-        # Maximális esési sebesség korlátozása
         if self.player_obj.vertical_velocity < -self.terminal_velocity:
             self.player_obj.vertical_velocity = -self.terminal_velocity
 
-        # 2. Játékos mozgatása a Z tengelyen (becsült új pozíció)
+        # 2. Becsült új pozíció
         current_pos = self.player_obj.node.getPos()
         new_z = current_pos.z + self.player_obj.vertical_velocity * dt
         
-        # 3. Ütközésvizsgálat (Lefuttatjuk a traversert)
+        # 3. Ütközésvizsgálat
         self.cTrav.traverse(self.base.render)
         
-        # Megnézzük, találtunk-e talajt
         if self.cQueue.getNumEntries() > 0:
-            # Rendezzük a találatokat (a legközelebbi érdekel)
             self.cQueue.sortEntries()
             entry = self.cQueue.getEntry(0)
             
-            # Hol van a talaj felszíne?
             ground_point = entry.getSurfacePoint(self.base.render)
             ground_z = ground_point.z
             
-            # LOGIKA: Ha a tervezett új pozíció a talaj ALÁ kerülne,
-            # akkor megállítjuk a zuhanást és a talajra tesszük.
-            # Egy kis tűréshatárt (offset) adunk, hogy ne rezegjen.
-            if new_z <= ground_z:
-                new_z = ground_z
-                self.player_obj.vertical_velocity = 0 # Megállunk
+            # JAVÍTOTT LOGIKA:
+            # Nem a nyers ground_z-hez hasonlítunk, hanem hozzáadjuk az offsetet.
+            # Így a "target_z" az a magasság, ahol a játékos KÖZEPÉNEK kell lennie ahhoz,
+            # hogy a TALPA a földön legyen.
+            target_z = ground_z + self.player_height_offset
+            
+            # Ha a tervezett új pozíció lejjebb van, mint a cél magasság...
+            if new_z <= target_z:
+                new_z = target_z # ...akkor felemeljük a helyes szintre
+                self.player_obj.vertical_velocity = 0
                 self.player_obj.is_grounded = True
             else:
                 self.player_obj.is_grounded = False
