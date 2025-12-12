@@ -23,17 +23,10 @@ class EnemyAI:
         self.player = player_obj
         self.patrol_points = patrol_points
         
-        # --- MODELL ÉS ANIMÁCIÓK BETÖLTÉSE ---
-        # Mivel jelezted, hogy csak a 'monkey.egg' van meg, és abban van a walk animáció,
-        # minden állapothoz ezt a fájlt rendeljük hozzá.
-        # Így a 'walk', 'run', 'attack' kulcsok mind ugyanazt a mozgást töltik be.
-        
-        self.actor = Actor("assets/models/monkey.egg", {
-            "walk":   "assets/models/monkey.egg",
-            "run":    "assets/models/monkey.egg",  # Nincs futás anim, használjuk a sétát
-            "attack": "assets/models/monkey.egg",  # Nincs támadás anim, használjuk a sétát
-            "idle":   "assets/models/monkey.egg"   # Nincs idle anim, használjuk a sétát (vagy stop)
-        })
+        # --- MODELL BETÖLTÉSE ---
+        # Ha statikus a modell (nincs animáció), az Actor akkor is betölti a geometriát.
+        # Üres szótárat adunk át, vagy csak a fájlt.
+        self.actor = Actor("assets/models/monkey.egg", {})
 
         self.actor.setScale(0.5, 0.5, 0.5) 
         self.actor.reparentTo(self.render)
@@ -56,7 +49,7 @@ class EnemyAI:
         self.last_known_pos = None
         self.search_timer = 0
         
-        # --- Élet Állapot (Javítás az AttributeError ellen) ---
+        # --- Élet Állapot ---
         self.is_alive = True
         self.health = 3
         
@@ -82,15 +75,11 @@ class EnemyAI:
         self.foot_np = self.actor.attachNewNode(self.foot_node)
         self.cTrav.addCollider(self.foot_np, self.cQueue)
         
-        # --- Hitbox a lövedékeknek ---
-        # Hozzáadunk egy ütközőgömböt, hogy el lehessen találni
-        # A bit(3) lesz az ENEMY maszk (a projectile.py-ban ezzel kell egyeznie)
+        # --- Hitbox ---
         c_sphere = CollisionNode('enemy_hitbox')
-        # JAVÍTÁS: CollisionSphere közvetlen használata, nem CollisionNode.CollisionSphere
-        c_sphere.addSolid(CollisionSphere(0, 0, 2, 2.0)) # Kb. testmagasságban
+        c_sphere.addSolid(CollisionSphere(0, 0, 2, 2.0))
         c_sphere.setIntoCollideMask(BitMask32.bit(3))
         c_sphere.setFromCollideMask(BitMask32.allOff())
-        # Python tag beállítása, hogy a lövedék megtalálja ezt az objektumot
         self.hitbox_np = self.actor.attachNewNode(c_sphere)
         self.hitbox_np.setPythonTag("enemy", self)
 
@@ -98,42 +87,40 @@ class EnemyAI:
         print("Enemy AI (Monkey) elindult!")
 
     def set_anim(self, anim_name, loop=True):
-        """Animáció váltása, ha szükséges."""
+        """Animáció váltása biztonságosan."""
         if self.current_anim != anim_name:
             try:
-                # Biztonsági try-except: Ha a modell statikus (nem karakter),
-                # a getAnimNames() összeomolhat. Ilyenkor ignoráljuk az animációt.
+                # JAVÍTÁS: Itt történik a hiba, ha a modell statikus.
+                # A getAnimNames() IndexErrort dob, ha nincs karakter struktúra.
+                # Elkapjuk a hibákat (IndexError, AttributeError) és csendben folytatjuk.
                 if anim_name in self.actor.getAnimNames():
                     if loop:
                         self.actor.loop(anim_name)
                     else:
                         self.actor.play(anim_name)
                     self.current_anim = anim_name
-            except Exception:
-                # Ha hiba van az Actorral (pl. statikus modell), nem csinálunk semmit
+            except (IndexError, AttributeError, ValueError):
+                # Statikus modell detektálva, vagy nincs animáció -> Nem csinálunk semmit
+                pass
+            except Exception as e:
+                # Bármi más hiba esetén sem omlunk össze, de nem spamoljuk a konzolt
                 pass
     
     def take_damage(self, amount=1):
-        """Sebzés elszenvedése."""
         if not self.is_alive: return
-        
         self.health -= amount
         print(f"Enemy hit! Health: {self.health}")
-        
         if self.health <= 0:
             self.die()
 
     def die(self):
-        """Halál logika."""
         if not self.is_alive: return
         self.is_alive = False
         print("Enemy died!")
-        # Eltávolítjuk a modellt a világból
         self.actor.cleanup()
         self.actor.removeNode()
 
     def update(self, task):
-        # Ha halott, állítsuk le a taskot
         if not self.is_alive:
             return Task.done
             
@@ -146,18 +133,14 @@ class EnemyAI:
         can_see = self.check_vision(dist_to_player)
         can_hear = self.check_hearing(dist_to_player)
 
-        # --- Állapotgép ---
-        # Itt hívjuk meg a set_anim-ot. Mivel minden kulcs ("walk", "run" stb.)
-        # ugyanahhoz a fájlhoz van kötve, a majom minden állapotban sétálni fog,
-        # de a kód logikailag helyes marad.
-        
+        # Állapotgép (Animáció kérésekkel, amik most már biztonságosak)
         if self.state == self.STATE_PATROL:
             self.set_anim("walk") 
             if can_see or can_hear:
                 self.found_player()
                 
         elif self.state == self.STATE_CHASE:
-            self.set_anim("run") # Ez is a walk lesz valójában
+            self.set_anim("run")
             if not can_see and dist_to_player > 5.0:
                 self.state = self.STATE_SEARCH
                 self.search_timer = 5.0
@@ -166,7 +149,7 @@ class EnemyAI:
                 self.state = self.STATE_ATTACK
                 
         elif self.state == self.STATE_ATTACK:
-            self.set_anim("attack") # Ez is a walk lesz valójában
+            self.set_anim("attack")
             if dist_to_player > self.attack_range:
                 self.state = self.STATE_CHASE
                 
@@ -179,7 +162,7 @@ class EnemyAI:
             else:
                 self.search_timer -= dt
 
-        # Viselkedés végrehajtása
+        # Viselkedés
         if self.state == self.STATE_PATROL:
             self.behavior_patrol(dt)
         elif self.state == self.STATE_CHASE:
@@ -205,8 +188,9 @@ class EnemyAI:
         
         current_z = self.actor.getZ()
         if ground_z > -90:
-            target_z = ground_z 
-            new_z = current_z + (target_z - current_z) * 0.1
+            ground_offset = 0.5 
+            target_z = ground_z + ground_offset
+            new_z = current_z + (target_z - current_z) * 0.2
             self.actor.setZ(new_z)
 
     def check_vision(self, dist):

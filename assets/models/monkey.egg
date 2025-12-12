@@ -5,7 +5,6 @@
 <Instance> Suzanne {
  <Transform> {
   <Scale> { 1.0 1.0 1.0 }
-  <Translate> { 0.0 0.0 0.9969736337661743}
   }
  <VertexPool> Suzanne_pool {
   <Vertex> 0 { 0.46875 -0.7578125 0.2421875
@@ -2175,3 +2174,4 @@
  <Polygon> 498 {  <VertexRef> { 457 553 529 436 <ref> { Suzanne_pool }}}
  <Polygon> 499 {  <VertexRef> { 531 554 459 438 <ref> { Suzanne_pool }}}
 }
+
